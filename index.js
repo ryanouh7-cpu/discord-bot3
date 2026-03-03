@@ -2,7 +2,10 @@ const {
   Client,
   GatewayIntentBits,
   PermissionsBitField,
-  ChannelType
+  ChannelType,
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle
 } = require("discord.js");
 
 const config = require("./config");
@@ -12,8 +15,7 @@ const client = new Client({
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMembers,
     GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent,
-    GatewayIntentBits.GuildVoiceStates
+    GatewayIntentBits.MessageContent
   ]
 });
 
@@ -32,24 +34,64 @@ client.on("messageCreate", async (message) => {
       return message.reply("❌ هذا الأمر للأدمن فقط.");
     }
 
-    await setupServer(message.guild);
-    message.reply("✅ تم إنشاء نظام Uun بالكامل.");
+    const row = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId("install_system")
+        .setLabel("📌 تثبيت النظام")
+        .setStyle(ButtonStyle.Success),
+
+      new ButtonBuilder()
+        .setCustomId("delete_system")
+        .setLabel("🗑 حذف النظام")
+        .setStyle(ButtonStyle.Danger)
+    );
+
+    message.reply({
+      content: "اختر الإجراء:",
+      components: [row]
+    });
   }
 });
 
-/* ================= دالة الإنشاء ================= */
+/* ================= الأزرار ================= */
 
-async function setupServer(guild) {
+client.on("interactionCreate", async (interaction) => {
+  if (!interaction.isButton()) return;
 
-  // ===== Logs Category =====
+  if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+    return interaction.reply({ content: "❌ للأدمن فقط.", ephemeral: true });
+  }
+
+  if (interaction.customId === "install_system") {
+    await installSystem(interaction.guild);
+    interaction.reply({ content: "✅ تم تثبيت نظام Uun بنجاح.", ephemeral: true });
+  }
+
+  if (interaction.customId === "delete_system") {
+    await deleteSystem(interaction.guild);
+    interaction.reply({ content: "🗑 تم حذف نظام Uun بالكامل.", ephemeral: true });
+  }
+});
+
+/* ================= تثبيت ================= */
+
+async function installSystem(guild) {
+
+  // ===== Logs Category (Private) =====
   let logsCategory = guild.channels.cache.find(
-    c => c.name === "Uun Logs" && c.type === ChannelType.GuildCategory
+    c => c.name === "Uun Logs"
   );
 
   if (!logsCategory) {
     logsCategory = await guild.channels.create({
       name: "Uun Logs",
-      type: ChannelType.GuildCategory
+      type: ChannelType.GuildCategory,
+      permissionOverwrites: [
+        {
+          id: guild.id,
+          deny: [PermissionsBitField.Flags.ViewChannel]
+        }
+      ]
     });
   }
 
@@ -72,22 +114,26 @@ async function setupServer(guild) {
   ];
 
   for (const name of logChannels) {
-    const exists = guild.channels.cache.find(
-      c => c.name === name && c.parentId === logsCategory.id
-    );
+    const exists = guild.channels.cache.find(c => c.name === name);
 
     if (!exists) {
       await guild.channels.create({
         name,
         type: ChannelType.GuildText,
-        parent: logsCategory.id
+        parent: logsCategory.id,
+        permissionOverwrites: [
+          {
+            id: guild.id,
+            deny: [PermissionsBitField.Flags.ViewChannel]
+          }
+        ]
       });
     }
   }
 
   // ===== Tickets Category =====
   let ticketCategory = guild.channels.cache.find(
-    c => c.name === "Uun Tickets" && c.type === ChannelType.GuildCategory
+    c => c.name === "Uun Tickets"
   );
 
   if (!ticketCategory) {
@@ -107,6 +153,22 @@ async function setupServer(guild) {
       name: "uun-welcome",
       type: ChannelType.GuildText
     });
+  }
+}
+
+/* ================= حذف ================= */
+
+async function deleteSystem(guild) {
+
+  const channelsToDelete = guild.channels.cache.filter(c =>
+    c.name.startsWith("uun") ||
+    c.name.includes("log") ||
+    c.name === "Uun Logs" ||
+    c.name === "Uun Tickets"
+  );
+
+  for (const channel of channelsToDelete.values()) {
+    await channel.delete().catch(() => {});
   }
 }
 
