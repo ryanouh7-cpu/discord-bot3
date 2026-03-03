@@ -21,15 +21,15 @@ const client = new Client({
   ]
 });
 
-/* ================== تحميل بيانات التكت ================== */
+/* ================== Data ================== */
 
-let data = {};
-if (fs.existsSync("./tickets.json")) {
-  data = JSON.parse(fs.readFileSync("./tickets.json"));
+if (!fs.existsSync("./tickets.json")) {
+  fs.writeFileSync("./tickets.json", JSON.stringify({}));
 }
 
-let counter = data.counter || 1;
-let openTickets = data.open || {};
+let database = JSON.parse(fs.readFileSync("./tickets.json"));
+let counter = database.counter || 1;
+let openTickets = database.open || {};
 
 function save() {
   fs.writeFileSync(
@@ -41,10 +41,10 @@ function save() {
 /* ================== Ready ================== */
 
 client.once("ready", () => {
-  console.log("✅ Uun System Fully Loaded");
+  console.log("✅ Uun System Online");
 });
 
-/* ================== Setup + Panel ================== */
+/* ================== Commands ================== */
 
 client.on("messageCreate", async (message) => {
   if (message.author.bot) return;
@@ -56,27 +56,22 @@ client.on("messageCreate", async (message) => {
     const row = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
         .setCustomId("install")
-        .setLabel("Install")
+        .setLabel("✅ Install System")
         .setStyle(ButtonStyle.Success),
+
       new ButtonBuilder()
         .setCustomId("delete")
-        .setLabel("Delete")
-        .setStyle(ButtonStyle.Danger)
-    );
+        .setLabel("🗑 Delete System")
+        .setStyle(ButtonStyle.Danger),
 
-    return message.reply({ content: "Choose:", components: [row] });
-  }
-
-  if (message.content === "!ticket-panel") {
-    const row = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
-        .setCustomId("open_ticket")
-        .setLabel("🎫 فتح تذكرة")
+        .setCustomId("send_panel")
+        .setLabel("🎫 Send Ticket Panel")
         .setStyle(ButtonStyle.Primary)
     );
 
-    return message.channel.send({
-      content: "اضغط الزر لفتح تذكرة",
+    return message.reply({
+      content: "🔧 Uun Control Panel:",
       components: [row]
     });
   }
@@ -90,9 +85,10 @@ client.on("interactionCreate", async (interaction) => {
   const guild = interaction.guild;
   const member = interaction.member;
 
-  /* ===== Install ===== */
+/* ===== Install System ===== */
 
   if (interaction.customId === "install") {
+
     if (!member.permissions.has(PermissionsBitField.Flags.Administrator))
       return interaction.reply({ content: "Admin only", ephemeral: true });
 
@@ -103,7 +99,7 @@ client.on("interactionCreate", async (interaction) => {
         type: ChannelType.GuildCategory
       });
 
-    const logNames = [
+    const logChannels = [
       "member-join-log",
       "member-leave-log",
       "voice-join-log",
@@ -114,7 +110,7 @@ client.on("interactionCreate", async (interaction) => {
       "ticket-claim-log"
     ];
 
-    for (const name of logNames) {
+    for (const name of logChannels) {
       if (!guild.channels.cache.find(c => c.name === name)) {
         await guild.channels.create({
           name,
@@ -131,10 +127,10 @@ client.on("interactionCreate", async (interaction) => {
       });
     }
 
-    interaction.reply({ content: "✅ Installed", ephemeral: true });
+    interaction.reply({ content: "✅ System Installed", ephemeral: true });
   }
 
-  /* ===== Delete ===== */
+/* ===== Delete System ===== */
 
   if (interaction.customId === "delete") {
     guild.channels.cache.forEach(c => {
@@ -142,25 +138,45 @@ client.on("interactionCreate", async (interaction) => {
         c.delete().catch(() => {});
     });
 
-    interaction.reply({ content: "🗑 Deleted", ephemeral: true });
+    interaction.reply({ content: "🗑 System Deleted", ephemeral: true });
   }
 
-  /* ===== Open Ticket ===== */
+/* ===== Send Ticket Panel ===== */
+
+  if (interaction.customId === "send_panel") {
+
+    if (!member.permissions.has(PermissionsBitField.Flags.Administrator))
+      return interaction.reply({ content: "Admin only", ephemeral: true });
+
+    const row = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId("open_ticket")
+        .setLabel("🎫 Open Ticket")
+        .setStyle(ButtonStyle.Primary)
+    );
+
+    await interaction.channel.send({
+      content: "🎟 Click below to open a support ticket.",
+      components: [row]
+    });
+
+    interaction.reply({ content: "✅ Ticket panel sent.", ephemeral: true });
+  }
+
+/* ===== Open Ticket ===== */
 
   if (interaction.customId === "open_ticket") {
+
     if (openTickets[member.id])
       return interaction.reply({
-        content: "❌ عندك تذكرة مفتوحة بالفعل",
+        content: "❌ You already have an open ticket.",
         ephemeral: true
       });
 
-    const category = guild.channels.cache.find(
-      c => c.name === "Uun Tickets"
-    );
-
+    const category = guild.channels.cache.find(c => c.name === "Uun Tickets");
     if (!category)
       return interaction.reply({
-        content: "❌ نظام التذاكر غير مثبت",
+        content: "❌ Ticket system not installed.",
         ephemeral: true
       });
 
@@ -169,14 +185,8 @@ client.on("interactionCreate", async (interaction) => {
       type: ChannelType.GuildText,
       parent: category.id,
       permissionOverwrites: [
-        {
-          id: guild.id,
-          deny: [PermissionsBitField.Flags.ViewChannel]
-        },
-        {
-          id: member.id,
-          allow: [PermissionsBitField.Flags.ViewChannel]
-        }
+        { id: guild.id, deny: [PermissionsBitField.Flags.ViewChannel] },
+        { id: member.id, allow: [PermissionsBitField.Flags.ViewChannel] }
       ]
     });
 
@@ -189,11 +199,11 @@ client.on("interactionCreate", async (interaction) => {
     const row = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
         .setCustomId("claim")
-        .setLabel("استلام")
+        .setLabel("🛠 Claim")
         .setStyle(ButtonStyle.Success),
       new ButtonBuilder()
         .setCustomId("close")
-        .setLabel("إغلاق")
+        .setLabel("🔒 Close")
         .setStyle(ButtonStyle.Danger)
     );
 
@@ -202,24 +212,26 @@ client.on("interactionCreate", async (interaction) => {
       components: [row]
     });
 
-    interaction.reply({ content: "✅ تم إنشاء التذكرة", ephemeral: true });
+    interaction.reply({ content: "✅ Ticket Created", ephemeral: true });
   }
 
-  /* ===== Claim ===== */
+/* ===== Claim ===== */
 
   if (interaction.customId === "claim") {
+
     if (!member.permissions.has(PermissionsBitField.Flags.Administrator))
       return interaction.reply({ content: "Admin only", ephemeral: true });
 
     guild.channels.cache.find(c => c.name === "ticket-claim-log")
       ?.send(`🛠 ${member} claimed ${interaction.channel}`);
 
-    interaction.reply("✅ تم الاستلام");
+    interaction.reply("✅ Ticket claimed");
   }
 
-  /* ===== Close ===== */
+/* ===== Close ===== */
 
   if (interaction.customId === "close") {
+
     guild.channels.cache.find(c => c.name === "ticket-close-log")
       ?.send(`🔒 ${interaction.channel.name} closed`);
 
@@ -231,10 +243,11 @@ client.on("interactionCreate", async (interaction) => {
 
     save();
 
-    interaction.channel.send("⭐ شكراً لاستخدامك الدعم");
+    interaction.channel.send("⭐ Thank you for contacting support");
 
     setTimeout(() => interaction.channel.delete(), 5000);
   }
+
 });
 
 /* ================== Logs ================== */
