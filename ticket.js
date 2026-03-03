@@ -1,159 +1,113 @@
 const {
-  PermissionsBitField,
-  ChannelType,
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
-  EmbedBuilder,
-  StringSelectMenuBuilder
+  ChannelType,
+  PermissionsBitField,
+  EmbedBuilder
 } = require("discord.js");
+
+const fs = require("fs");
 
 module.exports = (client) => {
 
-let ticketCounter = 1;
-const openTickets = new Map();
-const ticketOwners = new Map();
-const ticketTimers = new Map();
+  let data = JSON.parse(fs.readFileSync("./tickets.json"));
+  let counter = data.counter || 1;
+  let open = data.open || {};
 
-/* ===== Panel Command ===== */
-
-client.on("messageCreate", async (message) => {
-  if (message.author.bot) return;
-
-  if (message.content === "!panel") {
-    if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) return;
-
-    const menu = new StringSelectMenuBuilder()
-      .setCustomId("ticket_type")
-      .setPlaceholder("اختر نوع التذكرة")
-      .addOptions([
-        { label: "استفسار", value: "استفسار" },
-        { label: "شكوى", value: "شكوى" }
-      ]);
-
-    const row = new ActionRowBuilder().addComponents(menu);
-
-    const embed = new EmbedBuilder()
-      .setColor(0x2b2d31)
-      .setTitle("🎟️ Uun Ticket System")
-      .setDescription("اختر نوع التذكرة من القائمة بالأسفل");
-
-    message.channel.send({ embeds: [embed], components: [row] });
+  function save(){
+    fs.writeFileSync("./tickets.json", JSON.stringify({counter,open},null,2));
   }
-});
 
-/* ===== Interactions ===== */
+  client.on("messageCreate", async (m)=>{
+    if(m.content!=="!ticket-panel") return;
 
-client.on("interactionCreate", async (interaction) => {
+    const row=new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId("open_ticket").setLabel("فتح تذكرة").setStyle(ButtonStyle.Primary)
+    );
 
-  if (interaction.isStringSelectMenu()) {
+    m.channel.send({content:"🎫 افتح تذكرة",components:[row]});
+  });
 
-    if (interaction.customId === "ticket_type") {
+  client.on("interactionCreate", async (i)=>{
+    if(!i.isButton()) return;
 
-      if (openTickets.has(interaction.user.id))
-        return interaction.reply({ content: "❌ لديك تذكرة مفتوحة بالفعل.", ephemeral: true });
+    const guild=i.guild,member=i.member;
 
-      const type = interaction.values[0];
-      const number = String(ticketCounter).padStart(4, "0");
-      ticketCounter++;
+    if(i.customId==="open_ticket"){
 
-      let category = interaction.guild.channels.cache.find(c => c.name === "Uun Tickets");
+      if(open[member.id])
+        return i.reply({content:"عندك تذكرة مفتوحة",ephemeral:true});
 
-      if (!category) {
-        category = await interaction.guild.channels.create({
-          name: "Uun Tickets",
-          type: ChannelType.GuildCategory
-        });
-      }
+      const cat=guild.channels.cache.find(c=>c.name==="Uun Tickets");
 
-      const channel = await interaction.guild.channels.create({
-        name: `ticket-${number}`,
-        type: ChannelType.GuildText,
-        parent: category.id,
-        permissionOverwrites: [
-          { id: interaction.guild.id, deny: [PermissionsBitField.Flags.ViewChannel] },
-          { id: interaction.user.id, allow: [PermissionsBitField.Flags.ViewChannel] }
+      const ch=await guild.channels.create({
+        name:`ticket-${counter++}`,
+        type:ChannelType.GuildText,
+        parent:cat.id,
+        permissionOverwrites:[
+          {id:guild.id,deny:[PermissionsBitField.Flags.ViewChannel]},
+          {id:member.id,allow:[PermissionsBitField.Flags.ViewChannel]}
         ]
       });
 
-      openTickets.set(interaction.user.id, channel.id);
-      ticketOwners.set(channel.id, interaction.user.id);
+      open[member.id]=ch.id;
+      save();
 
-      const row = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-          .setCustomId("claim_ticket")
-          .setLabel("📌 استلام")
-          .setStyle(ButtonStyle.Primary),
-        new ButtonBuilder()
-          .setCustomId("close_ticket")
-          .setLabel("🔒 إغلاق")
-          .setStyle(ButtonStyle.Danger)
+      guild.channels.cache.find(c=>c.name==="ticket-open-log")
+        ?.send(`🎫 ${member} opened ${ch}`);
+
+      const row=new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId("claim").setLabel("استلام").setStyle(ButtonStyle.Success),
+        new ButtonBuilder().setCustomId("close").setLabel("إغلاق").setStyle(ButtonStyle.Danger)
       );
 
-      await channel.send({
-        content: `<@${interaction.user.id}>`,
-        embeds: [
-          new EmbedBuilder()
-            .setColor(0x00aeff)
-            .setTitle(`🎟️ ${type}`)
-            .setDescription("سيتم مساعدتك قريباً.")
-        ],
-        components: [row]
-      });
+      ch.send({content:`${member}`,components:[row]});
 
-      interaction.reply({ content: `✅ تم إنشاء ${channel}`, ephemeral: true });
+      // تنبيه قبل ساعة
+      setTimeout(()=>ch.send("⏳ سيتم الإغلاق بعد ساعة"),9*60*60*1000);
 
-      startTicketTimer(channel);
-    }
-  }
+      // إغلاق بعد 10 ساعات
+      setTimeout(()=>{
+        if(ch.deletable){
+          ch.send("🔒 تم الإغلاق التلقائي");
+          ch.delete();
+        }
+      },10*60*60*1000);
 
-  if (interaction.isButton()) {
-
-    if (interaction.customId === "claim_ticket") {
-      if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator))
-        return interaction.reply({ content: "❌ للأدمن فقط.", ephemeral: true });
-
-      interaction.reply("📌 تم استلام التذكرة.");
+      i.reply({content:"تم إنشاء التذكرة",ephemeral:true});
     }
 
-    if (interaction.customId === "close_ticket") {
-      closeTicket(interaction.channel);
+    if(i.customId==="claim"){
+      if(!member.permissions.has(PermissionsBitField.Flags.Administrator))
+        return i.reply({content:"Admin only",ephemeral:true});
+
+      guild.channels.cache.find(c=>c.name==="ticket-claim-log")
+        ?.send(`🛠 ${member} claimed ${i.channel}`);
+      i.reply("تم الاستلام");
     }
-  }
-});
 
-/* ===== Timers ===== */
+    if(i.customId==="close"){
 
-function startTicketTimer(channel) {
+      const row=new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId("rate_5").setLabel("⭐⭐⭐⭐⭐").setStyle(ButtonStyle.Success)
+      );
 
-  const ownerId = ticketOwners.get(channel.id);
+      i.channel.send({content:"قيّم الخدمة:",components:[row]});
 
-  const warn = setTimeout(() => {
-    channel.send(`🔔 <@${ownerId}> سيتم الإغلاق خلال ساعة.`);
-  }, 9 * 60 * 60 * 1000);
+      guild.channels.cache.find(c=>c.name==="ticket-close-log")
+        ?.send(`🔒 ${i.channel.name} closed`);
 
-  const close = setTimeout(() => {
-    closeTicket(channel);
-  }, 10 * 60 * 60 * 1000);
+      delete open[Object.keys(open).find(k=>open[k]===i.channel.id)];
+      save();
 
-  ticketTimers.set(channel.id, { warn, close });
-}
+      setTimeout(()=>i.channel.delete(),5000);
+    }
 
-async function closeTicket(channel) {
+    if(i.customId==="rate_5"){
+      i.reply({content:"شكراً لتقييمك ⭐",ephemeral:true});
+    }
 
-  const ownerId = ticketOwners.get(channel.id);
-  if (!ownerId) return;
-
-  openTickets.delete(ownerId);
-  ticketOwners.delete(channel.id);
-
-  const timers = ticketTimers.get(channel.id);
-  if (timers) {
-    clearTimeout(timers.warn);
-    clearTimeout(timers.close);
-  }
-
-  setTimeout(() => channel.delete().catch(() => {}), 3000);
-}
+  });
 
 };
