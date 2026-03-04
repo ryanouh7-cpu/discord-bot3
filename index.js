@@ -6,7 +6,11 @@ const {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
-  EmbedBuilder
+  EmbedBuilder,
+  StringSelectMenuBuilder,
+  ModalBuilder,
+  TextInputBuilder,
+  TextInputStyle
 } = require("discord.js");
 
 const fs = require("fs");
@@ -16,271 +20,312 @@ const client = new Client({
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMembers,
     GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent,
-    GatewayIntentBits.GuildVoiceStates
+    GatewayIntentBits.MessageContent
   ]
 });
 
-/* ================== Data ================== */
+/* ================= Database ================= */
 
-if (!fs.existsSync("./tickets.json")) {
+if (!fs.existsSync("./tickets.json"))
   fs.writeFileSync("./tickets.json", JSON.stringify({}));
-}
 
-let database = JSON.parse(fs.readFileSync("./tickets.json"));
-let counter = database.counter || 1;
-let openTickets = database.open || {};
+let db = JSON.parse(fs.readFileSync("./tickets.json"));
+
+let counter = db.counter || 1;
+let openTickets = db.open || {};      // userId -> channelId
+let ticketData = db.data || {};      // channelId -> { ownerId, type, createdAt, claimedBy, warned }
+let ratings = db.ratings || {};      // channelId -> rating
 
 function save() {
   fs.writeFileSync(
     "./tickets.json",
-    JSON.stringify({ counter, open: openTickets }, null, 2)
+    JSON.stringify({ counter, open: openTickets, data: ticketData, ratings }, null, 2)
   );
 }
 
-/* ================== Ready ================== */
+/* ================= Ready ================= */
 
 client.once("ready", () => {
-  console.log("✅ Uun System Online");
+  console.log("🔥 Uun System V4 ELITE Online");
 });
 
-/* ================== Commands ================== */
+/* ================= Setup ================= */
 
 client.on("messageCreate", async (message) => {
   if (message.author.bot) return;
 
   if (message.content === "!setup") {
     if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator))
-      return message.reply("❌ Admin only");
+      return message.reply("Admin only");
 
-    const row = new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setCustomId("install")
-        .setLabel("✅ Install System")
-        .setStyle(ButtonStyle.Success),
-
-      new ButtonBuilder()
-        .setCustomId("delete")
-        .setLabel("🗑 Delete System")
-        .setStyle(ButtonStyle.Danger),
-
-      new ButtonBuilder()
-        .setCustomId("send_panel")
-        .setLabel("🎫 Send Ticket Panel")
-        .setStyle(ButtonStyle.Primary)
-    );
-
-    return message.reply({
-      content: "🔧 Uun Control Panel:",
-      components: [row]
-    });
-  }
-});
-
-/* ================== Buttons ================== */
-
-client.on("interactionCreate", async (interaction) => {
-  if (!interaction.isButton()) return;
-
-  const guild = interaction.guild;
-  const member = interaction.member;
-
-/* ===== Install System ===== */
-
-  if (interaction.customId === "install") {
-
-    if (!member.permissions.has(PermissionsBitField.Flags.Administrator))
-      return interaction.reply({ content: "Admin only", ephemeral: true });
-
-    let logs = guild.channels.cache.find(c => c.name === "Uun Logs");
-    if (!logs)
-      logs = await guild.channels.create({
-        name: "Uun Logs",
-        type: ChannelType.GuildCategory
-      });
-
-    const logChannels = [
-      "member-join-log",
-      "member-leave-log",
-      "voice-join-log",
-      "voice-leave-log",
-      "voice-move-log",
-      "ticket-open-log",
-      "ticket-close-log",
-      "ticket-claim-log"
-    ];
-
-    for (const name of logChannels) {
-      if (!guild.channels.cache.find(c => c.name === name)) {
-        await guild.channels.create({
-          name,
-          type: ChannelType.GuildText,
-          parent: logs.id
-        });
-      }
-    }
-
-    if (!guild.channels.cache.find(c => c.name === "Uun Tickets")) {
-      await guild.channels.create({
+    // Ensure category
+    if (!message.guild.channels.cache.find(c => c.name === "Uun Tickets")) {
+      await message.guild.channels.create({
         name: "Uun Tickets",
         type: ChannelType.GuildCategory
       });
     }
 
-    interaction.reply({ content: "✅ System Installed", ephemeral: true });
-  }
+    // Ensure logs & feedback
+    if (!message.guild.channels.cache.find(c => c.name === "uun-logs")) {
+      await message.guild.channels.create({
+        name: "uun-logs",
+        type: ChannelType.GuildText
+      });
+    }
 
-/* ===== Delete System ===== */
-
-  if (interaction.customId === "delete") {
-    guild.channels.cache.forEach(c => {
-      if (c.name.includes("Uun") || c.name.includes("log"))
-        c.delete().catch(() => {});
-    });
-
-    interaction.reply({ content: "🗑 System Deleted", ephemeral: true });
-  }
-
-/* ===== Send Ticket Panel ===== */
-
-  if (interaction.customId === "send_panel") {
-
-    if (!member.permissions.has(PermissionsBitField.Flags.Administrator))
-      return interaction.reply({ content: "Admin only", ephemeral: true });
+    if (!message.guild.channels.cache.find(c => c.name === "uun-feedback")) {
+      await message.guild.channels.create({
+        name: "uun-feedback",
+        type: ChannelType.GuildText
+      });
+    }
 
     const row = new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setCustomId("open_ticket")
-        .setLabel("🎫 Open Ticket")
-        .setStyle(ButtonStyle.Primary)
+      new ButtonBuilder().setCustomId("send_panel").setLabel("🎫 Send Ticket Panel").setStyle(ButtonStyle.Primary)
     );
 
-    await interaction.channel.send({
-      content: "🎟 Click below to open a support ticket.",
-      components: [row]
-    });
+    message.reply({ content: "Uun System Control", components: [row] });
+  }
+});
 
-    interaction.reply({ content: "✅ Ticket panel sent.", ephemeral: true });
+/* ================= Auto Close Checker ================= */
+
+setInterval(async () => {
+  const now = Date.now();
+
+  for (const channelId in ticketData) {
+    const data = ticketData[channelId];
+    const channel = client.channels.cache.get(channelId);
+    if (!channel) continue;
+
+    const inactiveTime = now - data.lastActivity;
+
+    // 5 hours warning (1 hour before close)
+    if (!data.warned && inactiveTime >= 5 * 60 * 60 * 1000) {
+      channel.send(`<@${data.ownerId}> 🔔 This ticket will close in 1 hour due to inactivity.`);
+      data.warned = true;
+      save();
+    }
+
+    // 6 hours close
+    if (inactiveTime >= 6 * 60 * 60 * 1000) {
+      await closeTicket(channel, "Auto closed due to inactivity");
+    }
   }
 
-/* ===== Open Ticket ===== */
+}, 60 * 1000);
 
-  if (interaction.customId === "open_ticket") {
+/* ================= Interactions ================= */
 
-    if (openTickets[member.id])
-      return interaction.reply({
-        content: "❌ You already have an open ticket.",
-        ephemeral: true
-      });
+client.on("interactionCreate", async (interaction) => {
 
-    const category = guild.channels.cache.find(c => c.name === "Uun Tickets");
+/* ===== Send Panel ===== */
+
+  if (interaction.isButton() && interaction.customId === "send_panel") {
+
+    const embed = new EmbedBuilder()
+      .setColor("#2b2d31")
+      .setTitle("Uun System")
+      .setDescription("Select ticket type below")
+      .setFooter({ text: "Professional Support System" })
+      .setTimestamp();
+
+    const menu = new StringSelectMenuBuilder()
+      .setCustomId("ticket_type")
+      .setPlaceholder("Choose ticket type")
+      .addOptions(
+        { label: "استفسار", value: "استفسار" },
+        { label: "شكوى", value: "شكوى" }
+      );
+
+    const row = new ActionRowBuilder().addComponents(menu);
+
+    await interaction.channel.send({ embeds: [embed], components: [row] });
+    return interaction.reply({ content: "Panel Sent", ephemeral: true });
+  }
+
+/* ===== Choose Type ===== */
+
+  if (interaction.isStringSelectMenu() && interaction.customId === "ticket_type") {
+
+    if (openTickets[interaction.user.id])
+      return interaction.reply({ content: "You already have an open ticket.", ephemeral: true });
+
+    const category = interaction.guild.channels.cache.find(c => c.name === "Uun Tickets");
     if (!category)
-      return interaction.reply({
-        content: "❌ Ticket system not installed.",
-        ephemeral: true
-      });
+      return interaction.reply({ content: "Ticket category missing.", ephemeral: true });
 
-    const channel = await guild.channels.create({
-      name: `ticket-${counter++}`,
+    const ticketNumber = String(counter++).padStart(4, "0");
+    const type = interaction.values[0];
+
+    const channel = await interaction.guild.channels.create({
+      name: `ticket-${ticketNumber}`,
       type: ChannelType.GuildText,
       parent: category.id,
       permissionOverwrites: [
-        { id: guild.id, deny: [PermissionsBitField.Flags.ViewChannel] },
-        { id: member.id, allow: [PermissionsBitField.Flags.ViewChannel] }
+        { id: interaction.guild.id, deny: [PermissionsBitField.Flags.ViewChannel] },
+        { id: interaction.user.id, allow: [PermissionsBitField.Flags.ViewChannel] }
       ]
     });
 
-    openTickets[member.id] = channel.id;
+    openTickets[interaction.user.id] = channel.id;
+    ticketData[channel.id] = {
+      ownerId: interaction.user.id,
+      type,
+      createdAt: Date.now(),
+      lastActivity: Date.now(),
+      claimedBy: null,
+      warned: false
+    };
+
     save();
 
-    guild.channels.cache.find(c => c.name === "ticket-open-log")
-      ?.send(`🎫 ${member} opened ${channel}`);
+    const embed = new EmbedBuilder()
+      .setColor("Green")
+      .setTitle("Uun System")
+      .addFields(
+        { name: "Owner", value: `<@${interaction.user.id}>`, inline: true },
+        { name: "Type", value: type, inline: true },
+        { name: "Created", value: `<t:${Math.floor(Date.now()/1000)}:F>` }
+      )
+      .setFooter({ text: `Ticket #${ticketNumber}` });
 
     const row = new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setCustomId("claim")
-        .setLabel("🛠 Claim")
-        .setStyle(ButtonStyle.Success),
-      new ButtonBuilder()
-        .setCustomId("close")
-        .setLabel("🔒 Close")
-        .setStyle(ButtonStyle.Danger)
+      new ButtonBuilder().setCustomId("claim").setLabel("🛠 Claim").setStyle(ButtonStyle.Success),
+      new ButtonBuilder().setCustomId("close").setLabel("🔒 Close").setStyle(ButtonStyle.Danger)
     );
 
-    channel.send({
-      content: `${member}`,
-      components: [row]
-    });
+    channel.send({ content: `<@${interaction.user.id}>`, embeds: [embed], components: [row] });
 
-    interaction.reply({ content: "✅ Ticket Created", ephemeral: true });
+    interaction.reply({ content: `Ticket created: ${channel}`, ephemeral: true });
   }
 
 /* ===== Claim ===== */
 
-  if (interaction.customId === "claim") {
-
-    if (!member.permissions.has(PermissionsBitField.Flags.Administrator))
+  if (interaction.isButton() && interaction.customId === "claim") {
+    if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator))
       return interaction.reply({ content: "Admin only", ephemeral: true });
 
-    guild.channels.cache.find(c => c.name === "ticket-claim-log")
-      ?.send(`🛠 ${member} claimed ${interaction.channel}`);
-
-    interaction.reply("✅ Ticket claimed");
-  }
-
-/* ===== Close ===== */
-
-  if (interaction.customId === "close") {
-
-    guild.channels.cache.find(c => c.name === "ticket-close-log")
-      ?.send(`🔒 ${interaction.channel.name} closed`);
-
-    delete openTickets[
-      Object.keys(openTickets).find(
-        k => openTickets[k] === interaction.channel.id
-      )
-    ];
-
+    ticketData[interaction.channel.id].claimedBy = interaction.user.id;
     save();
 
-    interaction.channel.send("⭐ Thank you for contacting support");
+    interaction.reply("Ticket claimed.");
+  }
 
-    setTimeout(() => interaction.channel.delete(), 5000);
+/* ===== Close Button ===== */
+
+  if (interaction.isButton() && interaction.customId === "close") {
+
+    if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator))
+      return interaction.reply({ content: "Admin only", ephemeral: true });
+
+    const modal = new ModalBuilder()
+      .setCustomId("close_modal")
+      .setTitle("Close Ticket");
+
+    const reasonInput = new TextInputBuilder()
+      .setCustomId("reason")
+      .setLabel("Reason")
+      .setStyle(TextInputStyle.Paragraph)
+      .setRequired(true);
+
+    modal.addComponents(new ActionRowBuilder().addComponents(reasonInput));
+    return interaction.showModal(modal);
+  }
+
+  if (interaction.isModalSubmit() && interaction.customId === "close_modal") {
+    const reason = interaction.fields.getTextInputValue("reason");
+    await closeTicket(interaction.channel, reason);
+    interaction.reply("Ticket closed.");
+  }
+
+/* ===== Rating ===== */
+
+  if (interaction.isButton() && interaction.customId.startsWith("rate_")) {
+
+    const rating = interaction.customId.split("_")[1];
+    const channelId = interaction.message.embeds[0].footer.text;
+
+    ratings[channelId] = rating;
+    save();
+
+    const feedbackChannel = interaction.guild.channels.cache.find(c => c.name === "uun-feedback");
+
+    const embed = new EmbedBuilder()
+      .setColor("Gold")
+      .setTitle("Uun System - Rating")
+      .setDescription(`⭐ Rating: ${rating}/5`)
+      .setTimestamp();
+
+    feedbackChannel.send({ embeds: [embed] });
+
+    interaction.reply({ content: "Thanks for your feedback!", ephemeral: true });
   }
 
 });
 
-/* ================== Logs ================== */
+/* ================= Close Function ================= */
 
-const get = (g, n) => g.channels.cache.find(c => c.name === n);
+async function closeTicket(channel, reason) {
 
-client.on("guildMemberAdd", m => {
-  get(m.guild, "member-join-log")
-    ?.send(`${m} joined the server`);
+  const data = ticketData[channel.id];
+  if (!data) return;
+
+  const duration = Math.floor((Date.now() - data.createdAt) / 60000);
+
+  const logs = channel.guild.channels.cache.find(c => c.name === "uun-logs");
+
+  const embed = new EmbedBuilder()
+    .setColor("Red")
+    .setTitle("Uun System - Ticket Closed")
+    .addFields(
+      { name: "Owner", value: `<@${data.ownerId}>`, inline: true },
+      { name: "Type", value: data.type, inline: true },
+      { name: "Claimed By", value: data.claimedBy ? `<@${data.claimedBy}>` : "None", inline: true },
+      { name: "Duration", value: `${duration} minutes` },
+      { name: "Reason", value: reason }
+    )
+    .setTimestamp();
+
+  logs.send({ embeds: [embed] });
+
+  try {
+    const user = await client.users.fetch(data.ownerId);
+
+    const row = new ActionRowBuilder().addComponents(
+      ...[1,2,3,4,5].map(num =>
+        new ButtonBuilder()
+          .setCustomId(`rate_${num}`)
+          .setLabel(`${num}⭐`)
+          .setStyle(ButtonStyle.Secondary)
+      )
+    );
+
+    user.send({
+      content: "Please rate your support experience:",
+      embeds: [embed.setColor("Blue").setTitle("Uun System - Rate Support")],
+      components: [row]
+    });
+
+  } catch {}
+
+  delete openTickets[data.ownerId];
+  delete ticketData[channel.id];
+  save();
+
+  setTimeout(() => channel.delete().catch(()=>{}), 4000);
+}
+
+/* ================= Activity Tracking ================= */
+
+client.on("messageCreate", (msg) => {
+  if (msg.channel.id in ticketData) {
+    ticketData[msg.channel.id].lastActivity = Date.now();
+    save();
+  }
 });
 
-client.on("guildMemberRemove", m => {
-  get(m.guild, "member-leave-log")
-    ?.send(`${m.user.tag} left the server`);
-});
-
-client.on("voiceStateUpdate", (o, n) => {
-  const g = n.guild;
-  const m = n.member;
-
-  if (!o.channelId && n.channelId)
-    get(g, "voice-join-log")
-      ?.send(`${m} joined ${n.channel.name}`);
-
-  if (o.channelId && !n.channelId)
-    get(g, "voice-leave-log")
-      ?.send(`${m} left ${o.channel.name}`);
-
-  if (o.channelId && n.channelId && o.channelId !== n.channelId)
-    get(g, "voice-move-log")
-      ?.send(`${m} moved voice channels`);
-});
-
-/* ================== Login ================== */
+/* ================= Login ================= */
 
 client.login(process.env.TOKEN);
