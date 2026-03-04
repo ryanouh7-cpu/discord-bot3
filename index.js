@@ -41,7 +41,7 @@ function save() {
 /* ================= READY ================= */
 
 client.once("ready", () => {
-  console.log("🔥 Uun System Online (Private Mode)");
+  console.log("🔥 Uun System V5 Ultimate Online");
 });
 
 /* ================= COMMAND ================= */
@@ -59,7 +59,7 @@ client.on("messageCreate", async (message) => {
       new ButtonBuilder().setCustomId("panel").setLabel("Send Ticket Panel").setStyle(ButtonStyle.Primary)
     );
 
-    message.reply({ content: "Uun Control Panel", components: [row] });
+    message.reply({ content: "🔧 Uun Control Panel", components: [row] });
   }
 });
 
@@ -70,185 +70,102 @@ client.on("interactionCreate", async (interaction) => {
   const guild = interaction.guild;
   const member = interaction.member;
 
-  /* ================= BUTTONS ================= */
+  if (interaction.isButton() && interaction.customId === "install") {
 
-  if (interaction.isButton()) {
+    if (!member.permissions.has(PermissionsBitField.Flags.Administrator))
+      return interaction.reply({ content: "Admin only", ephemeral: true });
 
-    /* ===== INSTALL ===== */
+    const logsCat = await guild.channels.create({
+      name: "Uun Logs",
+      type: ChannelType.GuildCategory,
+      permissionOverwrites: [{ id: guild.id, deny: [PermissionsBitField.Flags.ViewChannel] }]
+    });
 
-    if (interaction.customId === "install") {
+    const logChannels = [
+      "member-join-log",
+      "member-leave-log",
+      "voice-join-log",
+      "voice-leave-log",
+      "voice-move-log",
+      "ticket-open-log",
+      "ticket-close-log",
+      "ticket-claim-log"
+    ];
 
-      if (!member.permissions.has(PermissionsBitField.Flags.Administrator))
-        return interaction.reply({ content: "Admin only", ephemeral: true });
-
-      // Logs Category (Private)
-      const logsCat = await guild.channels.create({
-        name: "Uun Logs",
-        type: ChannelType.GuildCategory,
-        permissionOverwrites: [
-          { id: guild.id, deny: [PermissionsBitField.Flags.ViewChannel] }
-        ]
-      });
-
-      const logChannels = [
-        "member-join-log",
-        "member-leave-log",
-        "voice-join-log",
-        "voice-leave-log",
-        "voice-move-log",
-        "ticket-open-log",
-        "ticket-close-log",
-        "ticket-claim-log"
-      ];
-
-      for (const name of logChannels) {
-        await guild.channels.create({
-          name,
-          type: ChannelType.GuildText,
-          parent: logsCat.id,
-          permissionOverwrites: [
-            { id: guild.id, deny: [PermissionsBitField.Flags.ViewChannel] }
-          ]
-        });
-      }
-
-      // Feedback (Private)
+    for (const name of logChannels) {
       await guild.channels.create({
-        name: "uun-feedback",
+        name,
         type: ChannelType.GuildText,
-        permissionOverwrites: [
-          { id: guild.id, deny: [PermissionsBitField.Flags.ViewChannel] }
-        ]
+        parent: logsCat.id,
+        permissionOverwrites: [{ id: guild.id, deny: [PermissionsBitField.Flags.ViewChannel] }]
       });
-
-      // Tickets Category (Private)
-      await guild.channels.create({
-        name: "Uun Tickets",
-        type: ChannelType.GuildCategory,
-        permissionOverwrites: [
-          { id: guild.id, deny: [PermissionsBitField.Flags.ViewChannel] }
-        ]
-      });
-
-      interaction.reply({ content: "✅ System Installed (Private)", ephemeral: true });
     }
 
-    /* ===== DELETE ===== */
+    await guild.channels.create({
+      name: "uun-feedback",
+      type: ChannelType.GuildText,
+      permissionOverwrites: [{ id: guild.id, deny: [PermissionsBitField.Flags.ViewChannel] }]
+    });
 
-    if (interaction.customId === "delete") {
-      guild.channels.cache.forEach(c => {
-        if (
-          c.name.includes("Uun") ||
-          c.name.includes("log") ||
-          c.name.includes("ticket") ||
-          c.name.includes("feedback")
-        ) c.delete().catch(()=>{});
-      });
-      interaction.reply({ content: "🗑 System Deleted", ephemeral: true });
-    }
+    await guild.channels.create({
+      name: "Uun Tickets",
+      type: ChannelType.GuildCategory,
+      permissionOverwrites: [{ id: guild.id, deny: [PermissionsBitField.Flags.ViewChannel] }]
+    });
 
-    /* ===== SEND PANEL ===== */
-
-    if (interaction.customId === "panel") {
-
-      const embed = new EmbedBuilder()
-        .setColor("Blue")
-        .setTitle("Uun")
-        .setDescription("اختر نوع التذكرة")
-        .setTimestamp();
-
-      const menu = new StringSelectMenuBuilder()
-        .setCustomId("ticket_type")
-        .setPlaceholder("اختر نوع التذكرة")
-        .addOptions(
-          { label: "استفسار", value: "استفسار" },
-          { label: "شكوى", value: "شكوى" }
-        );
-
-      const row = new ActionRowBuilder().addComponents(menu);
-
-      interaction.channel.send({ embeds: [embed], components: [row] });
-      interaction.reply({ content: "Panel Sent", ephemeral: true });
-    }
-
-    /* ===== CLAIM ===== */
-
-    if (interaction.customId === "claim") {
-      if (!member.permissions.has(PermissionsBitField.Flags.Administrator))
-        return interaction.reply({ content: "Admin only", ephemeral: true });
-
-      tickets[interaction.channel.id].claimed = member.id;
-      save();
-
-      guild.channels.cache.find(c => c.name === "ticket-claim-log")
-        ?.send(`🛠 ${member} claimed ${interaction.channel.name}`);
-
-      interaction.reply("Ticket Claimed");
-    }
-
-    /* ===== MANAGE ===== */
-
-    if (interaction.customId === "manage") {
-
-      const row = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId("notify").setLabel("Notify Owner").setStyle(ButtonStyle.Primary),
-        new ButtonBuilder().setCustomId("unclaim").setLabel("Unclaim").setStyle(ButtonStyle.Secondary)
-      );
-
-      interaction.reply({ content: "Manage Options", components: [row], ephemeral: true });
-    }
-
-    /* ===== CLOSE ===== */
-
-    if (interaction.customId === "close") {
-
-      const modal = new ModalBuilder()
-        .setCustomId("close_modal")
-        .setTitle("Uun System");
-
-      const reason = new TextInputBuilder()
-        .setCustomId("reason")
-        .setLabel("سبب الإغلاق")
-        .setStyle(TextInputStyle.Paragraph)
-        .setRequired(true);
-
-      modal.addComponents(new ActionRowBuilder().addComponents(reason));
-      return interaction.showModal(modal);
-    }
-
-    /* ===== RATING ===== */
-
-    if (interaction.customId.startsWith("rate_")) {
-
-      const rating = interaction.customId.split("_")[1];
-
-      const embed = new EmbedBuilder()
-        .setColor("Gold")
-        .setTitle("⭐ Ticket Rating")
-        .addFields(
-          { name: "User", value: `${interaction.user}`, inline: true },
-          { name: "Rating", value: `${rating}/5`, inline: true }
-        )
-        .setTimestamp();
-
-      guild.channels.cache.find(c => c.name === "uun-feedback")
-        ?.send({ embeds: [embed] });
-
-      interaction.reply({ content: "Thanks for rating!", ephemeral: true });
-    }
+    interaction.reply({ content: "✅ System Installed", ephemeral: true });
   }
 
-  /* ================= SELECT MENU ================= */
+  if (interaction.isButton() && interaction.customId === "delete") {
+
+    guild.channels.cache.forEach(c => {
+      if (
+        c.name.includes("Uun") ||
+        c.name.includes("log") ||
+        c.name.includes("ticket") ||
+        c.name.includes("feedback")
+      ) c.delete().catch(()=>{});
+    });
+
+    interaction.reply({ content: "🗑 System Deleted", ephemeral: true });
+  }
+
+  if (interaction.isButton() && interaction.customId === "panel") {
+
+    const embed = new EmbedBuilder()
+      .setColor("#2b2d31")
+      .setTitle("Uun")
+      .setDescription("اختر نوع التذكرة من القائمة بالأسفل")
+      .setTimestamp();
+
+    const menu = new StringSelectMenuBuilder()
+      .setCustomId("ticket_type")
+      .setPlaceholder("اختر نوع التذكرة")
+      .addOptions(
+        { label: "استفسار", value: "استفسار" },
+        { label: "شكوى", value: "شكوى" },
+        { label: "دعم فني", value: "دعم فني" }
+      );
+
+    interaction.channel.send({
+      embeds: [embed],
+      components: [new ActionRowBuilder().addComponents(menu)]
+    });
+
+    interaction.reply({ content: "Panel Sent", ephemeral: true });
+  }
 
   if (interaction.isStringSelectMenu() && interaction.customId === "ticket_type") {
 
     if (Object.values(tickets).find(t => t.owner === interaction.user.id))
-      return interaction.reply({ content: "You already have a ticket", ephemeral: true });
+      return interaction.reply({ content: "لديك تذكرة مفتوحة بالفعل", ephemeral: true });
 
     const category = guild.channels.cache.find(c => c.name === "Uun Tickets");
 
+    const ticketNumber = String(counter++).padStart(4, "0");
+
     const channel = await guild.channels.create({
-      name: `ticket-${counter++}`,
+      name: `ticket-${ticketNumber}`,
       type: ChannelType.GuildText,
       parent: category.id,
       permissionOverwrites: [
@@ -268,20 +185,59 @@ client.on("interactionCreate", async (interaction) => {
     save();
 
     guild.channels.cache.find(c => c.name === "ticket-open-log")
-      ?.send(`🎫 ${interaction.user} opened ${channel.name}`);
+      ?.send(`🎫 ${interaction.user.tag} opened ${channel.name}`);
+
+    const embed = new EmbedBuilder()
+      .setColor("#5865F2")
+      .setTitle("Uun System")
+      .addFields(
+        { name: "👤 صاحب التذكرة", value: `<@${interaction.user.id}>`, inline: true },
+        { name: "📂 نوع التذكرة", value: interaction.values[0], inline: true },
+        { name: "🕒 وقت الفتح", value: `<t:${Math.floor(Date.now()/1000)}:F>` }
+      )
+      .setTimestamp();
 
     const row = new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId("claim").setLabel("Claim").setStyle(ButtonStyle.Success),
-      new ButtonBuilder().setCustomId("close").setLabel("Close").setStyle(ButtonStyle.Danger),
-      new ButtonBuilder().setCustomId("manage").setLabel("Manage").setStyle(ButtonStyle.Secondary)
+      new ButtonBuilder().setCustomId("claim").setLabel("استلام").setStyle(ButtonStyle.Success),
+      new ButtonBuilder().setCustomId("close").setLabel("إغلاق").setStyle(ButtonStyle.Danger),
+      new ButtonBuilder().setCustomId("manage").setLabel("إدارة").setStyle(ButtonStyle.Secondary)
     );
 
-    channel.send({ content: `${interaction.user}`, components: [row] });
+    channel.send({
+      content: `<@${interaction.user.id}>`,
+      embeds: [embed],
+      components: [row]
+    });
 
-    interaction.reply({ content: "Ticket Created", ephemeral: true });
+    interaction.reply({ content: "✅ تم إنشاء التذكرة", ephemeral: true });
   }
 
-  /* ================= CLOSE MODAL ================= */
+  if (interaction.isButton() && interaction.customId === "claim") {
+
+    tickets[interaction.channel.id].claimed = interaction.user.id;
+    save();
+
+    guild.channels.cache.find(c => c.name === "ticket-claim-log")
+      ?.send(`🛠 ${interaction.user.tag} claimed ${interaction.channel.name}`);
+
+    interaction.reply("تم استلام التذكرة");
+  }
+
+  if (interaction.isButton() && interaction.customId === "close") {
+
+    const modal = new ModalBuilder()
+      .setCustomId("close_modal")
+      .setTitle("Uun System");
+
+    const reason = new TextInputBuilder()
+      .setCustomId("reason")
+      .setLabel("سبب الإغلاق")
+      .setStyle(TextInputStyle.Paragraph)
+      .setRequired(true);
+
+    modal.addComponents(new ActionRowBuilder().addComponents(reason));
+    return interaction.showModal(modal);
+  }
 
   if (interaction.isModalSubmit() && interaction.customId === "close_modal") {
 
@@ -303,17 +259,131 @@ client.on("interactionCreate", async (interaction) => {
             .setStyle(ButtonStyle.Secondary)
         )
       );
-      owner.send({ content: "⭐ Rate your experience:", components: [row] }).catch(()=>{});
+      owner.send({ content: "⭐ قيّم تجربتك:", components: [row] }).catch(()=>{});
     }
 
     delete tickets[interaction.channel.id];
     save();
 
-    interaction.reply("Closing...");
+    interaction.reply("جارٍ الإغلاق...");
     setTimeout(() => interaction.channel.delete().catch(()=>{}), 4000);
   }
 
+  if (interaction.isButton() && interaction.customId.startsWith("rate_")) {
+
+    const rating = interaction.customId.split("_")[1];
+
+    const embed = new EmbedBuilder()
+      .setColor("Gold")
+      .setTitle("⭐ Ticket Rating")
+      .addFields(
+        { name: "User", value: `${interaction.user}`, inline: true },
+        { name: "Rating", value: `${rating}/5`, inline: true }
+      )
+      .setTimestamp();
+
+    guild.channels.cache.find(c => c.name === "uun-feedback")
+      ?.send({ embeds: [embed] });
+
+    interaction.reply({ content: "شكراً لتقييمك ❤️", ephemeral: true });
+  }
+
 });
+
+/* ================= OTHER LOGS ================= */
+
+function getLog(guild, name) {
+  return guild.channels.cache.find(c => c.name === name);
+}
+
+client.on("guildMemberAdd", member => {
+  getLog(member.guild, "member-join-log")
+    ?.send(`🟢 ${member.user.tag} joined`);
+});
+
+client.on("guildMemberRemove", member => {
+  getLog(member.guild, "member-leave-log")
+    ?.send(`🔴 ${member.user.tag} left`);
+});
+
+client.on("voiceStateUpdate", (oldState, newState) => {
+
+  const guild = newState.guild;
+
+  if (!oldState.channelId && newState.channelId)
+    getLog(guild, "voice-join-log")
+      ?.send(`🎙 ${newState.member.user.tag} joined ${newState.channel.name}`);
+
+  if (oldState.channelId && !newState.channelId)
+    getLog(guild, "voice-leave-log")
+      ?.send(`📤 ${newState.member.user.tag} left ${oldState.channel.name}`);
+
+  if (oldState.channelId && newState.channelId && oldState.channelId !== newState.channelId)
+    getLog(guild, "voice-move-log")
+      ?.send(`🔁 ${newState.member.user.tag} moved voice channels`);
+});
+
+/* ================= AUTO CLOSE (6 HOURS) ================= */
+
+const AUTO_CLOSE_TIME = 6 * 60 * 60 * 1000;
+
+client.on("messageCreate", (message) => {
+  if (message.author.bot) return;
+
+  if (tickets[message.channel.id]) {
+    tickets[message.channel.id].lastActivity = Date.now();
+    save();
+  }
+});
+
+setInterval(async () => {
+
+  for (const channelId in tickets) {
+
+    const data = tickets[channelId];
+    if (!data) continue;
+
+    if (!data.lastActivity) {
+      data.lastActivity = data.created || Date.now();
+      save();
+    }
+
+    if (Date.now() - data.lastActivity >= AUTO_CLOSE_TIME) {
+
+      const channel = client.channels.cache.get(channelId);
+      if (!channel) continue;
+
+      const guild = channel.guild;
+
+      guild.channels.cache.find(c => c.name === "ticket-close-log")
+        ?.send(`⏳ ${channel.name} Auto Closed (No activity 6 hours)`);
+
+      const owner = await client.users.fetch(data.owner).catch(()=>null);
+
+      if (owner) {
+        const row = new ActionRowBuilder().addComponents(
+          [1,2,3,4,5].map(n =>
+            new ButtonBuilder()
+              .setCustomId(`rate_${n}`)
+              .setLabel(`${n}⭐`)
+              .setStyle(ButtonStyle.Secondary)
+          )
+        );
+
+        owner.send({
+          content: "⏳ تم إغلاق التذكرة تلقائياً بسبب عدم النشاط (6 ساعات)\n⭐ قيّم تجربتك:",
+          components: [row]
+        }).catch(()=>{});
+      }
+
+      delete tickets[channelId];
+      save();
+
+      channel.delete().catch(()=>{});
+    }
+  }
+
+}, 60000);
 
 /* ================= LOGIN ================= */
 
