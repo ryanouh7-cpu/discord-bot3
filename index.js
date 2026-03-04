@@ -1,4 +1,4 @@
-// ================== UUN LOGS ULTRA DETAILED ==================
+// ================== UUN LOGS BOT FULL SPLIT ==================
 
 const {
   Client,
@@ -22,7 +22,7 @@ const client = new Client({
 /* ================= READY ================= */
 
 client.once("ready", () => {
-  console.log("📜 Uun Ultra Detailed Logs Online");
+  console.log("📜 Uun Split Logs Online");
 });
 
 /* ================= HELPERS ================= */
@@ -31,7 +31,7 @@ function getLog(guild, name) {
   return guild.channels.cache.find(c => c.name === name);
 }
 
-function createEmbed(title, color = "Blurple") {
+function embed(title, color="Blurple"){
   return new EmbedBuilder()
     .setColor(color)
     .setTitle(title)
@@ -39,233 +39,146 @@ function createEmbed(title, color = "Blurple") {
     .setTimestamp();
 }
 
-async function getExecutor(guild, type) {
-  const logs = await guild.fetchAuditLogs({ type, limit: 1 }).catch(()=>{});
+async function getExecutor(guild,type){
+  const logs = await guild.fetchAuditLogs({ type, limit:1 }).catch(()=>{});
   return logs?.entries.first();
 }
 
 /* ================= SETUP ================= */
 
-client.on("messageCreate", async (message) => {
+client.on("messageCreate", async (message)=>{
 
-  if (!message.guild || message.author.bot) return;
+  if(!message.guild||message.author.bot) return;
 
-  if (message.content === "!logs-setup") {
+  if(message.content==="!logs-setup"){
 
-    if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator))
+    if(!message.member.permissions.has(PermissionsBitField.Flags.Administrator))
       return message.reply("Admin only");
 
+    const role = message.guild.roles.cache.find(r=>r.name===".");
+    if(!role) return message.reply("رتبة . غير موجودة");
+
     const cat = await message.guild.channels.create({
-      name: "Uun Logs",
-      type: ChannelType.GuildCategory,
-      permissionOverwrites: [
-        { id: message.guild.id, deny: [PermissionsBitField.Flags.ViewChannel] }
-      ]
+      name:"Uun Logs",
+      type:ChannelType.GuildCategory
     });
 
-    const logs = [
-      "member-log",
-      "channel-log",
-      "role-log",
-      "voice-log",
-      "message-log",
-      "mod-log"
+    const perms = [
+      { id: message.guild.id, deny:[PermissionsBitField.Flags.ViewChannel] },
+      { id: role.id, allow:[PermissionsBitField.Flags.ViewChannel] },
+      { id: client.user.id, allow:[PermissionsBitField.Flags.ViewChannel] }
     ];
 
-    for (const name of logs) {
+    const channels = [
+
+      // Member
+      "member-join-log",
+      "member-leave-log",
+      "member-kick-log",
+      "member-ban-log",
+      "member-unban-log",
+      "member-timeout-log",
+      "member-timeout-remove-log",
+
+      // Voice
+      "voice-join-log",
+      "voice-leave-log",
+      "voice-move-log",
+
+      // Channel
+      "channel-create-log",
+      "channel-delete-log",
+      "channel-update-log",
+
+      // Role
+      "role-create-log",
+      "role-delete-log",
+      "role-update-log",
+      "role-give-log",
+      "role-remove-log",
+
+      // Message
+      "message-delete-log",
+      "message-edit-log"
+    ];
+
+    for(const name of channels){
       await message.guild.channels.create({
         name,
-        type: ChannelType.GuildText,
-        parent: cat.id,
-        permissionOverwrites: [
-          { id: message.guild.id, deny: [PermissionsBitField.Flags.ViewChannel] }
-        ]
+        type:ChannelType.GuildText,
+        parent:cat.id,
+        permissionOverwrites:perms
       });
     }
 
-    message.reply("✅ Ultra Logs Installed");
+    message.reply("✅ Split Logs Installed");
   }
 
 });
 
 /* ================= MEMBER JOIN ================= */
 
-client.on("guildMemberAdd", member => {
-
-  const embed = createEmbed("🟢 Member Joined","Green")
-    .addFields(
-      { name: "👤 Member", value: `${member} (${member.id})` },
-      { name: "📅 Created Account", value: `<t:${Math.floor(member.user.createdTimestamp/1000)}:F>` },
-      { name: "🕒 Joined Server", value: `<t:${Math.floor(Date.now()/1000)}:F>` }
-    );
-
-  getLog(member.guild,"member-log")?.send({ embeds:[embed] });
+client.on("guildMemberAdd",member=>{
+  getLog(member.guild,"member-join-log")
+    ?.send({embeds:[
+      embed("🟢 Member Joined","Green")
+      .addFields(
+        {name:"Member",value:`${member} (${member.id})`}
+      )
+    ]});
 });
 
 /* ================= MEMBER LEAVE / KICK ================= */
 
-client.on("guildMemberRemove", async member => {
+client.on("guildMemberRemove",async member=>{
 
-  const entry = await getExecutor(member.guild, AuditLogEvent.MemberKick);
+  const entry=await getExecutor(member.guild,AuditLogEvent.MemberKick);
 
-  const embed = createEmbed("🔴 Member Left","Red")
-    .addFields(
-      { name: "👤 Member", value: `${member.user.tag} (${member.id})` }
-    );
-
-  if (entry && entry.target.id === member.id) {
-    embed.setTitle("👢 Member Kicked")
-      .addFields(
-        { name: "🛠 By", value: `${entry.executor} (${entry.executor.id})` },
-        { name: "📝 Reason", value: entry.reason || "No Reason" }
-      );
+  if(entry && entry.target.id===member.id){
+    getLog(member.guild,"member-kick-log")
+      ?.send({embeds:[
+        embed("👢 Member Kicked","Orange")
+        .addFields(
+          {name:"Member",value:`${member.user.tag} (${member.id})`},
+          {name:"By",value:`${entry.executor}`}
+        )
+      ]});
+  }else{
+    getLog(member.guild,"member-leave-log")
+      ?.send({embeds:[
+        embed("🔴 Member Left","Red")
+        .addFields(
+          {name:"Member",value:`${member.user.tag} (${member.id})`}
+        )
+      ]});
   }
 
-  getLog(member.guild,"member-log")?.send({ embeds:[embed] });
 });
 
 /* ================= BAN / UNBAN ================= */
 
-client.on("guildBanAdd", async ban => {
-
-  const entry = await getExecutor(ban.guild, AuditLogEvent.MemberBanAdd);
-
-  const embed = createEmbed("🚫 Member Banned","DarkRed")
-    .addFields(
-      { name: "👤 User", value: `${ban.user} (${ban.user.id})` },
-      { name: "🛠 By", value: `${entry?.executor || "Unknown"}` },
-      { name: "📝 Reason", value: entry?.reason || "No Reason" }
-    );
-
-  getLog(ban.guild,"mod-log")?.send({ embeds:[embed] });
-});
-
-client.on("guildBanRemove", async ban => {
-
-  const entry = await getExecutor(ban.guild, AuditLogEvent.MemberBanRemove);
-
-  const embed = createEmbed("♻ Member Unbanned","Green")
-    .addFields(
-      { name: "👤 User", value: `${ban.user} (${ban.user.id})` },
-      { name: "🛠 By", value: `${entry?.executor || "Unknown"}` }
-    );
-
-  getLog(ban.guild,"mod-log")?.send({ embeds:[embed] });
-});
-
-/* ================= TIMEOUT ================= */
-
-client.on("guildMemberUpdate", async (oldMember,newMember)=>{
-
-  if (!oldMember.communicationDisabledUntil && newMember.communicationDisabledUntil) {
-
-    const entry = await getExecutor(newMember.guild, AuditLogEvent.MemberUpdate);
-
-    const embed = createEmbed("⏳ Member Timed Out","Orange")
+client.on("guildBanAdd",async ban=>{
+  const entry=await getExecutor(ban.guild,AuditLogEvent.MemberBanAdd);
+  getLog(ban.guild,"member-ban-log")
+    ?.send({embeds:[
+      embed("🚫 Member Banned","DarkRed")
       .addFields(
-        { name:"👤 Member", value:`${newMember} (${newMember.id})`},
-        { name:"🛠 By", value:`${entry?.executor || "Unknown"}`},
-        { name:"⏱ Until", value:`<t:${Math.floor(new Date(newMember.communicationDisabledUntil).getTime()/1000)}:F>`}
-      );
+        {name:"User",value:`${ban.user} (${ban.user.id})`},
+        {name:"By",value:`${entry?.executor||"Unknown"}`}
+      )
+    ]});
+});
 
-    getLog(newMember.guild,"mod-log")?.send({embeds:[embed]});
-  }
-
-  if (oldMember.communicationDisabledUntil && !newMember.communicationDisabledUntil) {
-
-    const entry = await getExecutor(newMember.guild, AuditLogEvent.MemberUpdate);
-
-    const embed = createEmbed("✅ Timeout Removed","Green")
+client.on("guildBanRemove",async ban=>{
+  const entry=await getExecutor(ban.guild,AuditLogEvent.MemberBanRemove);
+  getLog(ban.guild,"member-unban-log")
+    ?.send({embeds:[
+      embed("♻ Member Unbanned","Green")
       .addFields(
-        { name:"👤 Member", value:`${newMember} (${newMember.id})`},
-        { name:"🛠 By", value:`${entry?.executor || "Unknown"}`}
-      );
-
-    getLog(newMember.guild,"mod-log")?.send({embeds:[embed]});
-  }
-
-});
-
-/* ================= CHANNEL CREATE / DELETE / RENAME ================= */
-
-client.on("channelCreate", async channel=>{
-
-  const entry = await getExecutor(channel.guild, AuditLogEvent.ChannelCreate);
-
-  const embed = createEmbed("📁 Channel Created","Green")
-    .addFields(
-      { name:"📌 Channel", value:`${channel} (${channel.id})`},
-      { name:"🛠 By", value:`${entry?.executor || "Unknown"}`}
-    );
-
-  getLog(channel.guild,"channel-log")?.send({embeds:[embed]});
-});
-
-client.on("channelDelete", async channel=>{
-
-  const entry = await getExecutor(channel.guild, AuditLogEvent.ChannelDelete);
-
-  const embed = createEmbed("🗑 Channel Deleted","Red")
-    .addFields(
-      { name:"📌 Channel", value:`${channel.name}`},
-      { name:"🛠 By", value:`${entry?.executor || "Unknown"}`}
-    );
-
-  getLog(channel.guild,"channel-log")?.send({embeds:[embed]});
-});
-
-client.on("channelUpdate", async (oldChannel,newChannel)=>{
-
-  if(oldChannel.name!==newChannel.name){
-
-    const entry = await getExecutor(newChannel.guild, AuditLogEvent.ChannelUpdate);
-
-    const embed = createEmbed("✏ Channel Renamed","Orange")
-      .addFields(
-        { name:"Old Name", value:oldChannel.name },
-        { name:"New Name", value:newChannel.name },
-        { name:"🛠 By", value:`${entry?.executor || "Unknown"}`}
-      );
-
-    getLog(newChannel.guild,"channel-log")?.send({embeds:[embed]});
-  }
-
-});
-
-/* ================= ROLE RENAME ================= */
-
-client.on("roleUpdate", async (oldRole,newRole)=>{
-
-  if(oldRole.name!==newRole.name){
-
-    const entry = await getExecutor(newRole.guild, AuditLogEvent.RoleUpdate);
-
-    const embed = createEmbed("🎭 Role Renamed","Orange")
-      .addFields(
-        { name:"Old Name", value:oldRole.name },
-        { name:"New Name", value:newRole.name },
-        { name:"🛠 By", value:`${entry?.executor || "Unknown"}`}
-      );
-
-    getLog(newRole.guild,"role-log")?.send({embeds:[embed]});
-  }
-
-});
-
-/* ================= MESSAGE DELETE ================= */
-
-client.on("messageDelete", async message=>{
-
-  if(!message.guild||message.author?.bot)return;
-
-  const embed=createEmbed("🗑 Message Deleted","Grey")
-    .addFields(
-      {name:"👤 Author",value:`${message.author} (${message.author.id})`},
-      {name:"📍 Channel",value:`${message.channel}`},
-      {name:"💬 Content",value:message.content||"No Text"}
-    );
-
-  getLog(message.guild,"message-log")?.send({embeds:[embed]});
+        {name:"User",value:`${ban.user} (${ban.user.id})`},
+        {name:"By",value:`${entry?.executor||"Unknown"}`}
+      )
+    ]});
 });
 
 /* ================= LOGIN ================= */
