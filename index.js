@@ -1,4 +1,3 @@
-
 const {
   Client,
   GatewayIntentBits,
@@ -36,16 +35,13 @@ let counter = db.counter || 1;
 let tickets = db.tickets || {};
 
 function save() {
-  fs.writeFileSync(
-    "./tickets.json",
-    JSON.stringify({ counter, tickets }, null, 2)
-  );
+  fs.writeFileSync("./tickets.json", JSON.stringify({ counter, tickets }, null, 2));
 }
 
 /* ================= READY ================= */
 
 client.once("ready", () => {
-  console.log("🔥 Uun System Fully Online");
+  console.log("🔥 Uun System Online (Private Mode)");
 });
 
 /* ================= COMMAND ================= */
@@ -74,6 +70,8 @@ client.on("interactionCreate", async (interaction) => {
   const guild = interaction.guild;
   const member = interaction.member;
 
+  /* ================= BUTTONS ================= */
+
   if (interaction.isButton()) {
 
     /* ===== INSTALL ===== */
@@ -83,10 +81,14 @@ client.on("interactionCreate", async (interaction) => {
       if (!member.permissions.has(PermissionsBitField.Flags.Administrator))
         return interaction.reply({ content: "Admin only", ephemeral: true });
 
-      let logsCat = await guild.channels.create({
+      // Logs Category (Private)
+      const logsCat = await guild.channels.create({
         name: "Uun Logs",
-        type: ChannelType.GuildCategory
-      }).catch(()=>{});
+        type: ChannelType.GuildCategory,
+        permissionOverwrites: [
+          { id: guild.id, deny: [PermissionsBitField.Flags.ViewChannel] }
+        ]
+      });
 
       const logChannels = [
         "member-join-log",
@@ -100,32 +102,49 @@ client.on("interactionCreate", async (interaction) => {
       ];
 
       for (const name of logChannels) {
-        if (!guild.channels.cache.find(c => c.name === name)) {
-          await guild.channels.create({
-            name,
-            type: ChannelType.GuildText,
-            parent: logsCat?.id
-          });
-        }
+        await guild.channels.create({
+          name,
+          type: ChannelType.GuildText,
+          parent: logsCat.id,
+          permissionOverwrites: [
+            { id: guild.id, deny: [PermissionsBitField.Flags.ViewChannel] }
+          ]
+        });
       }
 
-      if (!guild.channels.cache.find(c => c.name === "uun-feedback"))
-        await guild.channels.create({ name: "uun-feedback", type: ChannelType.GuildText });
+      // Feedback (Private)
+      await guild.channels.create({
+        name: "uun-feedback",
+        type: ChannelType.GuildText,
+        permissionOverwrites: [
+          { id: guild.id, deny: [PermissionsBitField.Flags.ViewChannel] }
+        ]
+      });
 
-      if (!guild.channels.cache.find(c => c.name === "Uun Tickets"))
-        await guild.channels.create({ name: "Uun Tickets", type: ChannelType.GuildCategory });
+      // Tickets Category (Private)
+      await guild.channels.create({
+        name: "Uun Tickets",
+        type: ChannelType.GuildCategory,
+        permissionOverwrites: [
+          { id: guild.id, deny: [PermissionsBitField.Flags.ViewChannel] }
+        ]
+      });
 
-      interaction.reply({ content: "System Installed", ephemeral: true });
+      interaction.reply({ content: "✅ System Installed (Private)", ephemeral: true });
     }
 
     /* ===== DELETE ===== */
 
     if (interaction.customId === "delete") {
       guild.channels.cache.forEach(c => {
-        if (c.name.includes("Uun") || c.name.includes("log") || c.name.includes("ticket"))
-          c.delete().catch(()=>{});
+        if (
+          c.name.includes("Uun") ||
+          c.name.includes("log") ||
+          c.name.includes("ticket") ||
+          c.name.includes("feedback")
+        ) c.delete().catch(()=>{});
       });
-      interaction.reply({ content: "System Deleted", ephemeral: true });
+      interaction.reply({ content: "🗑 System Deleted", ephemeral: true });
     }
 
     /* ===== SEND PANEL ===== */
@@ -135,7 +154,7 @@ client.on("interactionCreate", async (interaction) => {
       const embed = new EmbedBuilder()
         .setColor("Blue")
         .setTitle("Uun")
-        .setDescription("اختر نوع التذكرة من القائمة")
+        .setDescription("اختر نوع التذكرة")
         .setTimestamp();
 
       const menu = new StringSelectMenuBuilder()
@@ -155,7 +174,6 @@ client.on("interactionCreate", async (interaction) => {
     /* ===== CLAIM ===== */
 
     if (interaction.customId === "claim") {
-
       if (!member.permissions.has(PermissionsBitField.Flags.Administrator))
         return interaction.reply({ content: "Admin only", ephemeral: true });
 
@@ -163,9 +181,21 @@ client.on("interactionCreate", async (interaction) => {
       save();
 
       guild.channels.cache.find(c => c.name === "ticket-claim-log")
-        ?.send(`🛠 ${member} claimed ${interaction.channel}`);
+        ?.send(`🛠 ${member} claimed ${interaction.channel.name}`);
 
       interaction.reply("Ticket Claimed");
+    }
+
+    /* ===== MANAGE ===== */
+
+    if (interaction.customId === "manage") {
+
+      const row = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId("notify").setLabel("Notify Owner").setStyle(ButtonStyle.Primary),
+        new ButtonBuilder().setCustomId("unclaim").setLabel("Unclaim").setStyle(ButtonStyle.Secondary)
+      );
+
+      interaction.reply({ content: "Manage Options", components: [row], ephemeral: true });
     }
 
     /* ===== CLOSE ===== */
@@ -184,18 +214,6 @@ client.on("interactionCreate", async (interaction) => {
 
       modal.addComponents(new ActionRowBuilder().addComponents(reason));
       return interaction.showModal(modal);
-    }
-
-    /* ===== MANAGE ===== */
-
-    if (interaction.customId === "manage") {
-
-      const row = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId("notify").setLabel("Notify").setStyle(ButtonStyle.Primary),
-        new ButtonBuilder().setCustomId("unclaim").setLabel("Unclaim").setStyle(ButtonStyle.Secondary)
-      );
-
-      interaction.reply({ content: "Manage Options", components: [row], ephemeral: true });
     }
 
     /* ===== RATING ===== */
@@ -218,15 +236,14 @@ client.on("interactionCreate", async (interaction) => {
 
       interaction.reply({ content: "Thanks for rating!", ephemeral: true });
     }
-
   }
 
-  /* ===== TICKET TYPE ===== */
+  /* ================= SELECT MENU ================= */
 
   if (interaction.isStringSelectMenu() && interaction.customId === "ticket_type") {
 
     if (Object.values(tickets).find(t => t.owner === interaction.user.id))
-      return interaction.reply({ content: "You already have ticket", ephemeral: true });
+      return interaction.reply({ content: "You already have a ticket", ephemeral: true });
 
     const category = guild.channels.cache.find(c => c.name === "Uun Tickets");
 
@@ -236,21 +253,22 @@ client.on("interactionCreate", async (interaction) => {
       parent: category.id,
       permissionOverwrites: [
         { id: guild.id, deny: [PermissionsBitField.Flags.ViewChannel] },
-        { id: interaction.user.id, allow: [PermissionsBitField.Flags.ViewChannel] }
+        { id: interaction.user.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages] },
+        { id: client.user.id, allow: [PermissionsBitField.Flags.ViewChannel] }
       ]
     });
 
     tickets[channel.id] = {
       owner: interaction.user.id,
       type: interaction.values[0],
-      claimed: null,
-      created: Date.now()
+      created: Date.now(),
+      claimed: null
     };
 
     save();
 
     guild.channels.cache.find(c => c.name === "ticket-open-log")
-      ?.send(`🎫 ${interaction.user} opened ${channel}`);
+      ?.send(`🎫 ${interaction.user} opened ${channel.name}`);
 
     const row = new ActionRowBuilder().addComponents(
       new ButtonBuilder().setCustomId("claim").setLabel("Claim").setStyle(ButtonStyle.Success),
@@ -263,15 +281,13 @@ client.on("interactionCreate", async (interaction) => {
     interaction.reply({ content: "Ticket Created", ephemeral: true });
   }
 
-  /* ===== CLOSE MODAL ===== */
+  /* ================= CLOSE MODAL ================= */
 
   if (interaction.isModalSubmit() && interaction.customId === "close_modal") {
 
     const reason = interaction.fields.getTextInputValue("reason");
     const data = tickets[interaction.channel.id];
     if (!data) return;
-
-    const duration = Math.floor((Date.now() - data.created) / 1000);
 
     guild.channels.cache.find(c => c.name === "ticket-close-log")
       ?.send(`🔒 ${interaction.channel.name} closed | Reason: ${reason}`);
@@ -287,40 +303,16 @@ client.on("interactionCreate", async (interaction) => {
             .setStyle(ButtonStyle.Secondary)
         )
       );
-
       owner.send({ content: "⭐ Rate your experience:", components: [row] }).catch(()=>{});
     }
 
     delete tickets[interaction.channel.id];
     save();
 
-    interaction.reply("Ticket Closing...");
+    interaction.reply("Closing...");
     setTimeout(() => interaction.channel.delete().catch(()=>{}), 4000);
   }
 
-});
-
-/* ================= LOG EVENTS ================= */
-
-const get = (g, n) => g.channels.cache.find(c => c.name === n);
-
-client.on("guildMemberAdd", m => {
-  get(m.guild, "member-join-log")?.send(`${m} joined`);
-});
-
-client.on("guildMemberRemove", m => {
-  get(m.guild, "member-leave-log")?.send(`${m.user.tag} left`);
-});
-
-client.on("voiceStateUpdate", (o, n) => {
-  if (!o.channelId && n.channelId)
-    get(n.guild, "voice-join-log")?.send(`${n.member} joined ${n.channel.name}`);
-
-  if (o.channelId && !n.channelId)
-    get(n.guild, "voice-leave-log")?.send(`${n.member} left ${o.channel.name}`);
-
-  if (o.channelId && n.channelId && o.channelId !== n.channelId)
-    get(n.guild, "voice-move-log")?.send(`${n.member} moved voice`);
 });
 
 /* ================= LOGIN ================= */
