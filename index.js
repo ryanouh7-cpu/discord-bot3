@@ -1,4 +1,4 @@
-// ================== UUN SYSTEM V5 ULTIMATE STABLE ==================
+// ================== UUN SYSTEM STABLE CLEAN ==================
 
 const {
   Client,
@@ -31,48 +31,47 @@ const client = new Client({
 /* ================= DATABASE ================= */
 
 if (!fs.existsSync("./tickets.json"))
-  fs.writeFileSync("./tickets.json", JSON.stringify({}));
+  fs.writeFileSync("./tickets.json", JSON.stringify({ counter: 1, tickets: {} }));
 
-let db = JSON.parse(fs.readFileSync("./tickets.json"));
-let counter = db.counter || 1;
-let tickets = db.tickets || {};
+let { counter, tickets } = JSON.parse(fs.readFileSync("./tickets.json"));
 
 function save() {
   fs.writeFileSync("./tickets.json", JSON.stringify({ counter, tickets }, null, 2));
 }
 
-function getLog(guild, name) {
-  return guild.channels.cache.find(c => c.name === name);
-}
+const getLog = (guild, name) =>
+  guild.channels.cache.find(c => c.name === name);
 
-function sendLog(channel, title, description, color) {
+const log = (channel, title, desc, color = "Blurple") => {
   if (!channel) return;
-  const embed = new EmbedBuilder()
-    .setColor(color)
-    .setTitle(title)
-    .setDescription(description)
-    .setTimestamp();
-  channel.send({ embeds: [embed] });
-}
+  channel.send({
+    embeds: [new EmbedBuilder()
+      .setColor(color)
+      .setTitle(title)
+      .setDescription(desc)
+      .setTimestamp()]
+  });
+};
 
 /* ================= READY ================= */
 
-client.once("ready", () => {
-  console.log("🔥 Uun System Ultimate Stable Online");
-});
+client.once("ready", () =>
+  console.log("🔥 Uun System Stable Clean Online")
+);
 
-/* ================= MESSAGE ================= */
+/* ================= SETUP ================= */
 
-client.on("messageCreate", async (message) => {
+client.on("messageCreate", async message => {
+
   if (message.author.bot) return;
 
-  // تحديث النشاط داخل التذكرة
   if (tickets[message.channel.id]) {
     tickets[message.channel.id].lastActivity = Date.now();
     save();
   }
 
   if (message.content === "!setup") {
+
     if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator))
       return message.reply("Admin only");
 
@@ -88,46 +87,38 @@ client.on("messageCreate", async (message) => {
 
 /* ================= INTERACTIONS ================= */
 
-client.on("interactionCreate", async (interaction) => {
+client.on("interactionCreate", async interaction => {
 
   if (!interaction.guild) return;
-
   const guild = interaction.guild;
-  const member = interaction.member;
 
-  /* ===== INSTALL ===== */
+  /* INSTALL */
 
   if (interaction.isButton() && interaction.customId === "install") {
 
-    if (!member.permissions.has(PermissionsBitField.Flags.Administrator))
+    if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator))
       return interaction.reply({ content: "Admin only", ephemeral: true });
 
-    const logsCat = await guild.channels.create({
+    const cat = await guild.channels.create({
       name: "Uun Logs",
       type: ChannelType.GuildCategory,
       permissionOverwrites: [{ id: guild.id, deny: [PermissionsBitField.Flags.ViewChannel] }]
     });
 
-    const logChannels = [
-      "member-join-log",
-      "member-leave-log",
-      "voice-join-log",
-      "voice-leave-log",
-      "voice-move-log",
-      "member-role-log",
-      "ticket-open-log",
-      "ticket-close-log",
-      "ticket-claim-log"
+    const logs = [
+      "member-join-log","member-leave-log",
+      "voice-join-log","voice-leave-log","voice-move-log",
+      "member-role-log","ban-log","timeout-log",
+      "message-delete-log","ticket-open-log",
+      "ticket-close-log","ticket-claim-log"
     ];
 
-    for (const name of logChannels) {
+    for (const name of logs)
       await guild.channels.create({
-        name,
-        type: ChannelType.GuildText,
-        parent: logsCat.id,
+        name, type: ChannelType.GuildText,
+        parent: cat.id,
         permissionOverwrites: [{ id: guild.id, deny: [PermissionsBitField.Flags.ViewChannel] }]
       });
-    }
 
     await guild.channels.create({
       name: "uun-feedback",
@@ -141,36 +132,22 @@ client.on("interactionCreate", async (interaction) => {
       permissionOverwrites: [{ id: guild.id, deny: [PermissionsBitField.Flags.ViewChannel] }]
     });
 
-    return interaction.reply({ content: "✅ System Installed", ephemeral: true });
+    return interaction.reply({ content: "✅ Installed", ephemeral: true });
   }
 
-  /* ===== DELETE ===== */
-
-  if (interaction.isButton() && interaction.customId === "delete") {
-    guild.channels.cache.forEach(c => {
-      if (
-        c.name.includes("Uun") ||
-        c.name.includes("log") ||
-        c.name.includes("ticket") ||
-        c.name.includes("feedback")
-      ) c.delete().catch(()=>{});
-    });
-    return interaction.reply({ content: "🗑 System Deleted", ephemeral: true });
-  }
-
-  /* ===== PANEL ===== */
+  /* PANEL */
 
   if (interaction.isButton() && interaction.customId === "panel") {
 
     const embed = new EmbedBuilder()
-      .setColor("#2b2d31")
+      .setColor("DarkButNotBlack")
       .setTitle("Uun")
-      .setDescription("اختر نوع التذكرة من القائمة")
+      .setDescription("اختر نوع التذكرة")
       .setTimestamp();
 
     const menu = new StringSelectMenuBuilder()
       .setCustomId("ticket_type")
-      .setPlaceholder("اختر نوع التذكرة")
+      .setPlaceholder("اختر")
       .addOptions(
         { label: "استفسار", value: "استفسار" },
         { label: "شكوى", value: "شكوى" },
@@ -185,20 +162,20 @@ client.on("interactionCreate", async (interaction) => {
     return interaction.reply({ content: "Panel Sent", ephemeral: true });
   }
 
-  /* ===== CREATE TICKET ===== */
+  /* CREATE TICKET */
 
   if (interaction.isStringSelectMenu() && interaction.customId === "ticket_type") {
 
     if (Object.values(tickets).find(t => t.owner === interaction.user.id))
-      return interaction.reply({ content: "لديك تذكرة مفتوحة بالفعل", ephemeral: true });
+      return interaction.reply({ content: "عندك تذكرة مفتوحة", ephemeral: true });
 
     const category = guild.channels.cache.find(c => c.name === "Uun Tickets");
-    const ticketNumber = String(counter++).padStart(4, "0");
+    const id = String(counter++).padStart(4, "0");
 
     const channel = await guild.channels.create({
-      name: `ticket-${ticketNumber}`,
+      name: `ticket-${id}`,
       type: ChannelType.GuildText,
-      parent: category.id,
+      parent: category?.id,
       permissionOverwrites: [
         { id: guild.id, deny: [PermissionsBitField.Flags.ViewChannel] },
         { id: interaction.user.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages] },
@@ -210,54 +187,48 @@ client.on("interactionCreate", async (interaction) => {
       owner: interaction.user.id,
       type: interaction.values[0],
       created: Date.now(),
-      claimed: null,
-      lastActivity: Date.now()
+      lastActivity: Date.now(),
+      claimed: null
     };
 
     save();
 
-    sendLog(getLog(guild, "ticket-open-log"),
+    log(getLog(guild,"ticket-open-log"),
       "🎫 Ticket Opened",
-      `${interaction.user} opened ${channel}`,
-      "Blue"
-    );
-
-    const embed = new EmbedBuilder()
-      .setColor("#5865F2")
-      .setTitle("Uun System")
-      .addFields(
-        { name: "👤 صاحب التذكرة", value: `<@${interaction.user.id}>`, inline: true },
-        { name: "📂 النوع", value: interaction.values[0], inline: true },
-        { name: "🕒 وقت الفتح", value: `<t:${Math.floor(Date.now()/1000)}:F>` }
-      );
+      `👤 ${interaction.user}\n📂 ${interaction.values[0]}\n📍 ${channel}`);
 
     const row = new ActionRowBuilder().addComponents(
       new ButtonBuilder().setCustomId("claim").setLabel("استلام").setStyle(ButtonStyle.Success),
       new ButtonBuilder().setCustomId("close").setLabel("إغلاق").setStyle(ButtonStyle.Danger)
     );
 
-    channel.send({ content: `<@${interaction.user.id}>`, embeds: [embed], components: [row] });
+    channel.send({
+      content: `${interaction.user}`,
+      embeds: [new EmbedBuilder()
+        .setColor("Blurple")
+        .setTitle("Uun System")
+        .setDescription(`👤 ${interaction.user}\n📂 ${interaction.values[0]}\n🕒 <t:${Math.floor(Date.now()/1000)}:F>`)],
+      components: [row]
+    });
 
-    return interaction.reply({ content: "✅ تم إنشاء التذكرة", ephemeral: true });
+    return interaction.reply({ content: "تم إنشاء التذكرة", ephemeral: true });
   }
 
-  /* ===== CLAIM ===== */
+  /* CLAIM */
 
   if (interaction.isButton() && interaction.customId === "claim") {
 
     tickets[interaction.channel.id].claimed = interaction.user.id;
     save();
 
-    sendLog(getLog(guild, "ticket-claim-log"),
+    log(getLog(guild,"ticket-claim-log"),
       "🛠 Ticket Claimed",
-      `${interaction.user} claimed ${interaction.channel}`,
-      "Green"
-    );
+      `👤 ${interaction.user}\n📍 ${interaction.channel}`);
 
-    return interaction.reply({ content: "تم استلام التذكرة" });
+    return interaction.reply("تم الاستلام");
   }
 
-  /* ===== CLOSE ===== */
+  /* CLOSE */
 
   if (interaction.isButton() && interaction.customId === "close") {
 
@@ -268,8 +239,7 @@ client.on("interactionCreate", async (interaction) => {
     const reason = new TextInputBuilder()
       .setCustomId("reason")
       .setLabel("سبب الإغلاق")
-      .setStyle(TextInputStyle.Paragraph)
-      .setRequired(true);
+      .setStyle(TextInputStyle.Paragraph);
 
     modal.addComponents(new ActionRowBuilder().addComponents(reason));
     return interaction.showModal(modal);
@@ -277,159 +247,130 @@ client.on("interactionCreate", async (interaction) => {
 
   if (interaction.isModalSubmit() && interaction.customId === "close_modal") {
 
-    const reason = interaction.fields.getTextInputValue("reason");
     const data = tickets[interaction.channel.id];
     if (!data) return;
 
-    sendLog(getLog(guild, "ticket-close-log"),
+    const reason = interaction.fields.getTextInputValue("reason");
+
+    log(getLog(guild,"ticket-close-log"),
       "🔒 Ticket Closed",
-      `${interaction.channel} closed\nReason: ${reason}`,
-      "Red"
-    );
+      `📍 ${interaction.channel}\n📝 ${reason}`);
 
-    const feedback = getLog(guild, "uun-feedback");
-
-    const rateRow = new ActionRowBuilder().addComponents(
-      [1,2,3,4,5].map(n =>
-        new ButtonBuilder()
-          .setCustomId(`rate_${n}_${interaction.channel.id}`)
-          .setLabel(`${n}⭐`)
-          .setStyle(ButtonStyle.Secondary)
-      )
-    );
+    const feedback = getLog(guild,"uun-feedback");
 
     feedback?.send({
-      content: `📊 تقييم تذكرة ${interaction.channel.name}`,
-      components: [rateRow]
+      embeds: [new EmbedBuilder()
+        .setColor("Gold")
+        .setTitle("⭐ Ticket Rating")
+        .setDescription(`👤 <@${data.owner}>\n📂 ${data.type}`)],
+      components: [new ActionRowBuilder().addComponents(
+        [1,2,3,4,5].map(n =>
+          new ButtonBuilder()
+            .setCustomId(`rate_${interaction.channel.id}_${n}`)
+            .setLabel(`${n}⭐`)
+            .setStyle(ButtonStyle.Secondary)
+        )
+      )]
     });
 
     delete tickets[interaction.channel.id];
     save();
 
     interaction.reply("جارٍ الإغلاق...");
-    setTimeout(() => interaction.channel.delete().catch(()=>{}), 4000);
+    setTimeout(()=>interaction.channel.delete().catch(()=>{}),4000);
   }
 
-  /* ===== RATING ===== */
+  /* RATING */
 
   if (interaction.isButton() && interaction.customId.startsWith("rate_")) {
 
-    const parts = interaction.customId.split("_");
-    const rating = parts[1];
-    const channelId = parts[2];
+    const [ , channelId, rating ] = interaction.customId.split("_");
 
-    const embed = new EmbedBuilder()
-      .setColor("#FFD700")
-      .setTitle("⭐ New Ticket Rating")
-      .setDescription(`${interaction.user} rated ticket <#${channelId}>`)
-      .addFields({ name: "Rating", value: `${rating}/5` })
-      .setTimestamp();
+    log(getLog(guild,"uun-feedback"),
+      "⭐ New Rating",
+      `📍 <#${channelId}>\n⭐ ${rating}/5\n👤 ${interaction.user}`,
+      "Gold");
 
-    interaction.update({ content: "✅ تم تسجيل تقييمك", components: [] });
-
-    getLog(guild, "uun-feedback")?.send({ embeds: [embed] });
+    return interaction.reply({ content: "شكراً لتقييمك ❤️", ephemeral: true });
   }
 
-});
-
-/* ================= MEMBER LOGS ================= */
-
-client.on("guildMemberAdd", member => {
-  sendLog(getLog(member.guild,"member-join-log"),
-    "🟢 Member Joined",
-    `${member} joined the server`,
-    "Green");
-});
-
-client.on("guildMemberRemove", member => {
-  sendLog(getLog(member.guild,"member-leave-log"),
-    "🔴 Member Left",
-    `${member.user.tag} left the server`,
-    "Red");
-});
-
-/* ================= VOICE LOGS ================= */
-
-client.on("voiceStateUpdate", (oldState, newState) => {
-
-  const guild = newState.guild;
-
-  if (!oldState.channelId && newState.channelId)
-    sendLog(getLog(guild,"voice-join-log"),
-      "🎙 Voice Join",
-      `${newState.member} joined ${newState.channel}`,
-      "Blue");
-
-  if (oldState.channelId && !newState.channelId)
-    sendLog(getLog(guild,"voice-leave-log"),
-      "📤 Voice Leave",
-      `${oldState.member} left <#${oldState.channelId}>`,
-      "Orange");
-
-  if (oldState.channelId && newState.channelId && oldState.channelId !== newState.channelId)
-    sendLog(getLog(guild,"voice-move-log"),
-      "🔁 Voice Move",
-      `${newState.member} moved from <#${oldState.channelId}> to ${newState.channel}`,
-      "Purple");
-});
-
-/* ================= ROLE LOGS ================= */
-
-client.on("guildMemberUpdate", async (oldMember, newMember) => {
-
-  const logChannel = getLog(newMember.guild,"member-role-log");
-  if (!logChannel) return;
-
-  const added = newMember.roles.cache.filter(r => !oldMember.roles.cache.has(r.id));
-  const removed = oldMember.roles.cache.filter(r => !newMember.roles.cache.has(r.id));
-
-  const audit = await newMember.guild.fetchAuditLogs({
-    limit:1,
-    type:AuditLogEvent.MemberRoleUpdate
-  }).catch(()=>null);
-
-  let executor = "Unknown";
-  if (audit?.entries.first())
-    executor = audit.entries.first().executor;
-
-  for (const role of added.values())
-    sendLog(logChannel,"➕ Role Added",`${role} added to ${newMember} by ${executor}`,"Green");
-
-  for (const role of removed.values())
-    sendLog(logChannel,"➖ Role Removed",`${role} removed from ${newMember} by ${executor}`,"Red");
 });
 
 /* ================= AUTO CLOSE ================= */
 
-const AUTO_CLOSE_TIME = 6 * 60 * 60 * 1000;
+setInterval(() => {
 
-setInterval(async () => {
+  const now = Date.now();
+  const limit = 6 * 60 * 60 * 1000;
 
-  for (const channelId in tickets) {
-
-    const data = tickets[channelId];
-    if (!data) continue;
-    if (data.claimed) continue;
-
-    if (Date.now() - data.lastActivity >= AUTO_CLOSE_TIME) {
-
-      const channel = client.channels.cache.get(channelId);
-      if (!channel) continue;
-
-      sendLog(getLog(channel.guild,"ticket-close-log"),
-        "⏳ Auto Close",
-        `${channel} closed بسبب عدم النشاط 6 ساعات`,
-        "Orange"
-      );
-
-      delete tickets[channelId];
+  for (const id in tickets) {
+    const t = tickets[id];
+    if (!t.claimed && now - t.lastActivity > limit) {
+      const channel = client.channels.cache.get(id);
+      if (channel) {
+        log(getLog(channel.guild,"ticket-close-log"),
+          "⏰ Auto Closed",
+          `📍 ${channel}`);
+        channel.delete().catch(()=>{});
+      }
+      delete tickets[id];
       save();
-
-      channel.delete().catch(()=>{});
     }
   }
 
-},60000);
+}, 60000);
+
+/* ================= OTHER LOGS ================= */
+
+client.on("guildMemberAdd", m =>
+  log(getLog(m.guild,"member-join-log"),
+    "🟢 Member Joined", `${m}`,"Green"));
+
+client.on("guildMemberRemove", m =>
+  log(getLog(m.guild,"member-leave-log"),
+    "🔴 Member Left", `${m.user.tag}`,"Red"));
+
+client.on("voiceStateUpdate", (o,n) => {
+  if (!o.channel && n.channel)
+    log(getLog(n.guild,"voice-join-log"),
+      "🎙 Voice Join", `${n.member} → ${n.channel}`);
+  if (o.channel && !n.channel)
+    log(getLog(n.guild,"voice-leave-log"),
+      "📤 Voice Leave", `${n.member} ← ${o.channel}`);
+  if (o.channel && n.channel && o.channel.id !== n.channel.id)
+    log(getLog(n.guild,"voice-move-log"),
+      "🔁 Voice Move", `${n.member}`);
+});
+
+client.on("guildMemberUpdate", async (o,n) => {
+
+  const added = n.roles.cache.filter(r=>!o.roles.cache.has(r.id));
+  const removed = o.roles.cache.filter(r=>!n.roles.cache.has(r.id));
+
+  for (const r of added.values())
+    log(getLog(n.guild,"member-role-log"),
+      "➕ Role Added", `${n} → ${r}`);
+
+  for (const r of removed.values())
+    log(getLog(n.guild,"member-role-log"),
+      "➖ Role Removed", `${n} → ${r}`);
+
+  if (!o.communicationDisabledUntil && n.communicationDisabledUntil)
+    log(getLog(n.guild,"timeout-log"),
+      "⏳ Timeout", `${n}`,"Orange");
+});
+
+client.on("guildBanAdd", ban =>
+  log(getLog(ban.guild,"ban-log"),
+    "🚫 Banned", `${ban.user}`,"DarkRed"));
+
+client.on("messageDelete", msg => {
+  if (!msg.guild || msg.author?.bot) return;
+  log(getLog(msg.guild,"message-delete-log"),
+    "🗑 Message Deleted",
+    `👤 ${msg.author}\n📍 ${msg.channel}\n💬 ${msg.content || "No Text"}`,
+    "Grey");
+});
 
 /* ================= LOGIN ================= */
 
